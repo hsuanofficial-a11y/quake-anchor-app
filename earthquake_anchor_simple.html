@@ -1,0 +1,246 @@
+
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>地震速報主播稿產生器</title>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f6f7fb;color:#222}
+    .wrap{max-width:860px;margin:0 auto;padding:20px}
+    .card{background:#fff;border-radius:16px;padding:18px;box-shadow:0 8px 24px rgba(0,0,0,.08);margin-bottom:16px}
+    h1{font-size:28px;margin:0 0 8px}
+    h2{font-size:20px;margin:0 0 10px}
+    .muted{color:#666;font-size:14px;line-height:1.6}
+    textarea,input[type=text]{width:100%;box-sizing:border-box;padding:12px;border:1px solid #d8dbe6;border-radius:12px;font-size:16px}
+    textarea{min-height:180px;resize:vertical}
+    button{border:0;border-radius:12px;padding:12px 16px;font-size:16px;font-weight:700;cursor:pointer}
+    .primary{background:#1f6feb;color:#fff}
+    .secondary{background:#eef3ff;color:#1f4dbb}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .row > *{flex:1}
+    .result{white-space:pre-wrap;line-height:1.8;background:#fafbff;border:1px solid #e1e6f5;border-radius:12px;padding:14px}
+    img{max-width:100%;border-radius:12px;margin-top:10px}
+    .small{font-size:13px;color:#777}
+    .pill{display:inline-block;background:#eef3ff;color:#1f4dbb;padding:4px 10px;border-radius:999px;font-size:12px;margin-bottom:8px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="pill">手機也能用</div>
+    <h1>地震速報主播稿產生器</h1>
+    <div class="muted">很陽春，但能操作：上傳地震圖卡，先用瀏覽器 OCR 讀字，再自動整理成主播文稿與標題。若 OCR 失敗，也可以直接貼上圖卡文字，一樣能生成。</div>
+  </div>
+
+  <div class="card">
+    <h2>1. 上傳圖卡</h2>
+    <input id="imageInput" type="file" accept="image/*">
+    <img id="preview" style="display:none">
+    <div class="row" style="margin-top:12px">
+      <button id="ocrBtn" class="primary">從圖片讀字</button>
+      <button id="sampleBtn" class="secondary">載入範例文字</button>
+    </div>
+    <div id="ocrStatus" class="small" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. OCR / 手動修正文字</h2>
+    <textarea id="ocrText" placeholder="這裡會放 OCR 結果；如果辨識不準，直接手動修改後再按下方按鈕生成即可。"></textarea>
+    <div class="row" style="margin-top:12px">
+      <button id="generateBtn" class="primary">生成主播稿與標題</button>
+      <button id="copyRawBtn" class="secondary">複製原始文字</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. 生成結果</h2>
+    <div class="small">標題</div>
+    <div id="titleResult" class="result">尚未生成</div>
+    <div class="row" style="margin-top:10px">
+      <button id="copyTitleBtn" class="secondary">複製標題</button>
+    </div>
+    <div class="small" style="margin-top:16px">主播文稿</div>
+    <div id="scriptResult" class="result">尚未生成</div>
+    <div class="row" style="margin-top:10px">
+      <button id="copyScriptBtn" class="secondary">複製主播稿</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+const imageInput = document.getElementById('imageInput');
+const preview = document.getElementById('preview');
+const ocrBtn = document.getElementById('ocrBtn');
+const sampleBtn = document.getElementById('sampleBtn');
+const ocrStatus = document.getElementById('ocrStatus');
+const ocrText = document.getElementById('ocrText');
+const generateBtn = document.getElementById('generateBtn');
+const titleResult = document.getElementById('titleResult');
+const scriptResult = document.getElementById('scriptResult');
+
+imageInput.addEventListener('change', () => {
+  const file = imageInput.files[0];
+  if (!file) return;
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
+});
+
+sampleBtn.addEventListener('click', () => {
+  ocrText.value = `地震報告
+03/16 07:19左右
+臺南市政府東北方 40.1 公里
+位於臺南市楠西區
+芮氏規模 4.3
+地震深度 7.5 公里
+
+各地最大震度
+臺南市地區最大震度 4級 曾文
+嘉義縣地區最大震度 3級 大埔
+高雄市地區最大震度 2級 甲仙
+嘉義市地區最大震度 2級
+嘉義縣地區最大震度 2級 太保市
+雲林縣地區最大震度 1級 水林
+南投縣地區最大震度 1級 玉山
+高雄市地區最大震度 1級 高雄市
+臺東縣地區最大震度 1級 海端
+雲林縣地區最大震度 1級 斗六市
+花蓮縣地區最大震度 1級 富里
+彰化縣地區最大震度 1級 彰化市
+臺中市地區最大震度 1級 梧棲`;
+});
+
+ocrBtn.addEventListener('click', async () => {
+  const file = imageInput.files[0];
+  if (!file) {
+    alert('請先上傳圖片');
+    return;
+  }
+  ocrStatus.textContent = '正在辨識，手機第一次執行可能要等一下…';
+  try {
+    const { data } = await Tesseract.recognize(file, 'chi_tra+eng', {
+      logger: m => {
+        if (m.status) {
+          ocrStatus.textContent = `${m.status} ${m.progress ? Math.round(m.progress * 100) + '%' : ''}`;
+        }
+      }
+    });
+    ocrText.value = normalizeText(data.text);
+    ocrStatus.textContent = '辨識完成，可直接修正文字後生成。';
+  } catch (e) {
+    ocrStatus.textContent = 'OCR 失敗，請改用手動貼文字。';
+    console.error(e);
+  }
+});
+
+generateBtn.addEventListener('click', () => {
+  const raw = normalizeText(ocrText.value);
+  if (!raw.trim()) {
+    alert('請先有 OCR 文字或手動貼上內容');
+    return;
+  }
+  const parsed = parseEarthquake(raw);
+  titleResult.textContent = buildTitle(parsed);
+  scriptResult.textContent = buildScript(parsed);
+});
+
+document.getElementById('copyRawBtn').onclick = () => copyText(ocrText.value, '已複製原始文字');
+document.getElementById('copyTitleBtn').onclick = () => copyText(titleResult.textContent, '已複製標題');
+document.getElementById('copyScriptBtn').onclick = () => copyText(scriptResult.textContent, '已複製主播稿');
+
+function copyText(text, okMsg) {
+  navigator.clipboard.writeText(text).then(() => alert(okMsg));
+}
+
+function normalizeText(t) {
+  return t
+    .replace(/[：:]/g, ' ')
+    .replace(/[（(]/g, ' ')
+    .replace(/[）)]/g, ' ')
+    .replace(/台/g, '臺')
+    .replace(/左右/g, '左右\n')
+    .replace(/公里/g, '公里\n')
+    .replace(/級/g, '級\n')
+    .replace(/最大震度/g, '最大震度\n')
+    .replace(/\n\s+/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
+function pick(regex, text, idx=1) {
+  const m = text.match(regex);
+  return m ? (m[idx] || '').trim() : '';
+}
+
+function parseEarthquake(text) {
+  const date = pick(/(\d{1,2}\/\d{1,2})/, text);
+  const time = pick(/(\d{1,2}:\d{2})/, text);
+  const magnitude = pick(/(?:芮氏)?規模\s*([0-9.]+)/, text);
+  const depth = pick(/地震深度\s*([0-9.]+)\s*公里/, text);
+  const distance = pick(/([東西南北]+方\s*[0-9.]+\s*公里)/, text);
+  const place = pick(/位於([^\n]+)/, text);
+  const maxIntensity = pick(/最大震度\s*([0-9]+)級/, text);
+
+  const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  const items = [];
+  for (const line of lines) {
+    const m = line.match(/(.{2,8}?)[縣市].*?最大震度\s*([0-9]+)級\s*(.*)$/);
+    if (m) {
+      let county = m[1];
+      const full = line.match(/([^\s]{2,8}?[縣市])/);
+      if (full) county = full[1];
+      const level = m[2];
+      let station = (m[3] || '').trim();
+      if (!station) station = county;
+      items.push({ county, station, level });
+    }
+  }
+
+  const grouped = {};
+  items.forEach(it => {
+    if (!grouped[it.level]) grouped[it.level] = [];
+    grouped[it.level].push(it.county + (it.station && it.station !== it.county ? it.station : ''));
+  });
+
+  return { date, time, magnitude, depth, distance, place, maxIntensity, items, grouped, raw: text };
+}
+
+function buildTitle(d) {
+  const placeShort = d.place || '地震';
+  const t = d.time || '--:--';
+  const mag = d.magnitude || '?';
+  const max = d.maxIntensity || '?';
+  return `${t}${placeShort}規模${mag}地震 最大震度${max}級`;
+}
+
+function joinPlaces(arr) {
+  if (!arr || !arr.length) return '';
+  if (arr.length === 1) return arr[0];
+  if (arr.length === 2) return arr[0] + '及' + arr[1];
+  return arr.slice(0, -1).join('、') + '以及' + arr[arr.length - 1];
+}
+
+function buildScript(d) {
+  const dateText = d.date ? d.date.replace('/', '月') + '號' : '今天';
+  const timeText = d.time || '稍早';
+  const placeText = d.place || '不明地點';
+  const distText = d.distance || '震央位置';
+  const magText = d.magnitude || '?';
+  const depthText = d.depth || '?';
+  const maxText = d.maxIntensity || '?';
+
+  const levels = Object.keys(d.grouped).sort((a,b)=>Number(b)-Number(a));
+  let detail = '';
+  if (levels.length) {
+    const parts = levels.map(level => `${joinPlaces(d.grouped[level])}有${level}級`);
+    detail = '各地最大震度方面，' + parts.join('，') + '。';
+  } else {
+    detail = '各地震度資訊仍以氣象署後續公布為準。';
+  }
+
+  return `最新消息，根據中央氣象署最新資訊，今天${dateText}${timeText}發生芮氏規模${magText}地震，地震深度${depthText}公里，震央位於${distText}，位於${placeText}，最大震度為${maxText}級。\n\n${detail}`;
+}
+</script>
+</body>
+</html>
